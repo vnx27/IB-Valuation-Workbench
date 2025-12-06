@@ -70,7 +70,8 @@ def get_risk_free_rate() -> float:
 
 def safe_div(a: float, b: float, default: float = 0.0) -> float:
     try:
-        if b == 0 or b is None or math.isnan(b): return default
+        if b == 0 or b is None or math.isnan(b):
+            return default
         return a / b
     except:
         return default
@@ -112,7 +113,8 @@ class DataQualityTracker:
                     st.markdown(f"<div class='warning-box'>{icon} {msg}</div>", unsafe_allow_html=True)
 
 # ---------- Financial Data Engine (Enhanced with Validation) ----------
-@st.cache_data(ttl=900, show_spinner=False)
+# IMPORTANT: use cache_resource (not cache_data) because we return a custom class (DataQualityTracker)
+@st.cache_resource(show_spinner=False)
 def load_ticker_payload(ticker: str) -> Tuple[Optional[Dict[str, Any]], DataQualityTracker]:
     dq = DataQualityTracker()
     
@@ -130,16 +132,18 @@ def load_ticker_payload(ticker: str) -> Tuple[Optional[Dict[str, Any]], DataQual
         price = float(fast.get("last_price", 0))
         shares = int(fast.get("shares", 0))
         mcap = price * shares
-    except: 
+    except:
         pass
 
     if price == 0:
         try:
             info = t.info
             price = info.get("currentPrice") or info.get("regularMarketPrice") or 0.0
-            if shares == 0: shares = info.get("sharesOutstanding") or 0
-            if mcap == 0: mcap = info.get("marketCap") or 0
-        except: 
+            if shares == 0:
+                shares = info.get("sharesOutstanding") or 0
+            if mcap == 0:
+                mcap = info.get("marketCap") or 0
+        except:
             pass
 
     if price == 0:
@@ -169,16 +173,17 @@ def load_ticker_payload(ticker: str) -> Tuple[Optional[Dict[str, Any]], DataQual
         dq.add_assumption("Financial Period: Quarterly (Last 4 quarters)")
 
     def get_val(df, keys):
-        if df is None or df.empty: return 0.0
+        if df is None or df.empty:
+            return 0.0
         for k in keys:
             if k in df.index:
-                if use_annual: 
+                if use_annual:
                     val = float(df.loc[k].iloc[0] or 0)
                     return val
-                try: 
+                try:
                     val = float(df.loc[k].iloc[:4].sum() or 0)
                     return val
-                except: 
+                except:
                     return 0.0
         return 0.0
 
@@ -205,7 +210,7 @@ def load_ticker_payload(ticker: str) -> Tuple[Optional[Dict[str, Any]], DataQual
         dq.add_error(f"EBITDA is negative or zero (₹{ebitda/1e7:,.0f} Cr). Company may be loss-making.")
     
     ebit = ebitda - da
-    if ebit == 0 or ebit < 0: 
+    if ebit == 0 or ebit < 0:
         ebit = net_income + tax_exp + interest
         if ebit <= 0:
             dq.add_warning(f"EBIT is negative (₹{ebit/1e7:,.0f} Cr). Impacts WACC and DCF.")
@@ -215,15 +220,19 @@ def load_ticker_payload(ticker: str) -> Tuple[Optional[Dict[str, Any]], DataQual
     
     # Enhanced FCF with Working Capital
     def get_bs(df, keys):
-        if df is None or df.empty: return 0.0
+        if df is None or df.empty:
+            return 0.0
         for k in keys:
-            if k in df.index: return float(df.loc[k].iloc[0] or 0)
+            if k in df.index:
+                return float(df.loc[k].iloc[0] or 0)
         return 0.0
     
     def get_bs_prev(df, keys):
-        if df is None or df.empty or len(df.columns) < 2: return 0.0
+        if df is None or df.empty or len(df.columns) < 2:
+            return 0.0
         for k in keys:
-            if k in df.index: return float(df.loc[k].iloc[1] or 0)
+            if k in df.index:
+                return float(df.loc[k].iloc[1] or 0)
         return 0.0
     
     curr_assets = get_bs(bal, ["Current Assets"])
@@ -331,10 +340,15 @@ def calculate_beta_regression(ticker: str, market_symbol: str = "^NSEI", period:
         if abs(beta) > 3:
             issues.append(f"⚠️ Extreme beta ({beta:.2f}). Verify or use manual input.")
         
-        fig = px.scatter(x=x, y=y, trendline="ols", opacity=0.5,
-                         labels={'x': 'Market Return', 'y': 'Stock Return'},
-                         title=f"Beta Regression: {beta:.3f} (R²: {r2:.3f}, n={len(returns)})")
-        fig.update_layout(height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(20,20,20,0.5)')
+        fig = px.scatter(
+            x=x,
+            y=y,
+            trendline="ols",
+            opacity=0.5,
+            labels={"x": "Market Return", "y": "Stock Return"},
+            title=f"Beta Regression: {beta:.3f} (R²: {r2:.3f}, n={len(returns)})"
+        )
+        fig.update_layout(height=300, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(20,20,20,0.5)")
         
         return beta, r2, fig, "Success", issues
         
@@ -343,14 +357,16 @@ def calculate_beta_regression(ticker: str, market_symbol: str = "^NSEI", period:
 
 def calculate_unlevered_beta(levered_beta: float, debt: float, equity: float, tax_rate: float) -> float:
     """Calculate unlevered beta: Bu = Bl / [1 + (1-T) * (D/E)]"""
-    if equity == 0: return levered_beta
+    if equity == 0:
+        return levered_beta
     de_ratio = debt / equity
     unlevered = levered_beta / (1 + (1 - tax_rate) * de_ratio)
     return unlevered
 
 # ---------- Peer Utils (Enhanced with validation) ----------
 def clean_peer_list(raw_text: str) -> List[str]:
-    if not raw_text: return []
+    if not raw_text:
+        return []
     clean = raw_text.replace("[", "").replace("]", "").replace("'", "").replace('"', "").replace("\n", ",")
     return [x.strip().upper() for x in clean.split(",") if x.strip()]
 
@@ -453,55 +469,192 @@ def create_sensitivity_table(base_fcf: float, base_wacc: float, base_growth: flo
     return df
 
 # ---------- Excel Export ----------
-def create_professional_dcf_excel(data, years, fcf_proj, wacc, term_growth, pv_tv, equity_value, implied_price, tax_rate):
-    ebit_base = data['ebit']
-    cols = ["Historical (TTM)"] + [f"Year {y}E" for y in years]
-    
-    row_ebit = [ebit_base]
-    row_tax = [tax_rate]
-    row_nopat = [ebit_base * (1-tax_rate)]
-    row_da = [data['da']]
-    row_capex = [data['capex']]
-    row_dwc = [data['delta_wc']]
-    row_fcff = [data['fcf']]
-    
-    current_fcf = data['fcf']
-    for f in fcf_proj:
-        growth = (f / current_fcf) - 1 if current_fcf else 0
-        new_ebit = row_ebit[-1] * (1 + growth) if row_ebit[-1] else f/(1-tax_rate)
-        
-        row_ebit.append(new_ebit)
-        row_tax.append(tax_rate)
-        nopat = new_ebit * (1-tax_rate)
-        row_nopat.append(nopat)
-        row_da.append(row_da[-1] * (1 + growth * 0.5))
-        row_capex.append(row_capex[-1] * (1 + growth))
-        row_dwc.append(row_dwc[-1] * (1 + growth * 0.3))
-        row_fcff.append(f)
-        current_fcf = f
-        
-    row_time = ["-"] + [y - 0.5 for y in years]
-    row_df = ["-"] + [1 / ((1+wacc)**t) for t in row_time[1:]]
-    row_pv = ["-"] + [f * d for f, d in zip(row_fcff[1:], row_df[1:])]
-    
-    df_sched = pd.DataFrame([
-        row_ebit, row_tax, row_nopat, row_da, row_capex, row_dwc, row_fcff, 
-        row_time, row_df, row_pv
-    ], columns=cols, index=[
-        "EBIT", "Tax Rate", "NOPAT", "Add: D&A", "Less: Capex", 
-        "Less: Δ WC", "FCFF", "Mid Year Period", "Discount Factor", "PV of FCFF"
-    ])
-    
-    pv_explicit = sum([x for x in row_pv[1:] if isinstance(x, (int, float))])
-    
-    df_term = pd.DataFrame({
-        "Item": ["Terminal Growth", "WACC", "PV Explicit", "PV Terminal", 
-                 "Enterprise Value", "Net Debt", "Equity Value", "Shares (M)", "Implied Price"],
-        "Value": [term_growth, wacc, pv_explicit, pv_tv, pv_explicit+pv_tv, 
-                  data['net_debt'], equity_value, data['shares']/1e6, implied_price]
-    })
-    
-    return df_sched, df_term
+def create_professional_dcf_excel(
+    workbook,
+    data,
+    years,
+    fcf_proj,
+    wacc,
+    term_growth,
+    pv_tv,
+    equity_value,
+    implied_price,
+    tax_rate,
+    growth_rate,
+    current_price,
+):
+    """
+    Build a formatted DCF sheet that visually resembles a classic IB template.
+
+    NOTE: All numbers are written as VALUES (no Excel formulas).
+    In a V2, you can use openpyxl/xlsxwriter formulas to make this fully dynamic.
+    """
+    ws = workbook.add_worksheet("DCF_Valuation")
+
+    # ---------- Formats ----------
+    title_fmt = workbook.add_format(
+        {"bold": True, "bg_color": "#D9D9D9", "border": 1, "align": "left"}
+    )
+    section_title_fmt = workbook.add_format(
+        {"bold": True, "bg_color": "#F2F2F2", "border": 1, "align": "left"}
+    )
+    header_fmt = workbook.add_format(
+        {"bold": True, "border": 1, "align": "center", "bg_color": "#F2F2F2"}
+    )
+    row_lbl_fmt = workbook.add_format({"border": 1, "align": "left"})
+    num_fmt = workbook.add_format({"border": 1, "num_format": "#,##0.00"})
+    num0_fmt = workbook.add_format({"border": 1, "num_format": "#,##0"})
+    pct_fmt = workbook.add_format({"border": 1, "num_format": "0.0%"})
+    bold_num_fmt = workbook.add_format({"border": 1, "num_format": "#,##0.00", "bold": True})
+    bold_pct_fmt = workbook.add_format({"border": 1, "num_format": "0.0%", "bold": True})
+
+    # All monetary values in Cr (₹ / 1e7)
+    ebit_base_cr = data["ebit"] / 1e7
+    fcf_cr = [f / 1e7 for f in fcf_proj]
+    pv_tv_cr = pv_tv / 1e7
+    cash_cr = data["cash"] / 1e7
+    debt_cr = data["debt"] / 1e7
+
+    # Build per-year series
+    n = len(years)
+    ebit_list = [ebit_base_cr * ((1 + growth_rate) ** i) for i in range(n)]
+    ebit_after_tax = [e * (1 - tax_rate) for e in ebit_list]
+
+    reinvest_rate = []
+    for ea, f in zip(ebit_after_tax, fcf_cr):
+        if ea != 0:
+            reinvest_rate.append(1 - (f / ea))
+        else:
+            reinvest_rate.append(0.0)
+
+    # Mid-year convention and PV of FCFF
+    mid_year = [y - 0.5 for y in years]
+    disc_factor = [1 / ((1 + wacc) ** t) for t in mid_year]
+    pv_fcf_cr = [f * d for f, d in zip(fcf_cr, disc_factor)]
+    pv_fcf_total_cr = sum(pv_fcf_cr)
+    enterprise_cr = pv_fcf_total_cr + pv_tv_cr
+    equity_cr = equity_value / 1e7
+
+    # ---------- Section 1: Calculation of PV of FCFF ----------
+    start_row = 0
+    start_col = 0
+    last_col = start_col + n  # label column + N year columns
+
+    ws.merge_range(start_row, start_col, start_row, last_col, "Calculation of PV of FCFF", title_fmt)
+
+    # Year headers
+    ws.write(start_row + 1, start_col, "", header_fmt)
+    for idx, y in enumerate(years):
+        ws.write(start_row + 1, start_col + 1 + idx, f"Year {y}", header_fmt)
+
+    row = start_row + 2
+
+    def write_row(label, values, fmt):
+        nonlocal row
+        ws.write(row, start_col, label, row_lbl_fmt)
+        for idx, v in enumerate(values):
+            ws.write(row, start_col + 1 + idx, v, fmt)
+        row += 1
+
+    write_row("EBIT", ebit_list, num_fmt)
+    write_row("Tax Rate", [tax_rate] * n, pct_fmt)
+    write_row("EBIT(1-T)", ebit_after_tax, num_fmt)
+    write_row("Less: Reinvestment Rate", reinvest_rate, pct_fmt)
+    write_row("Free Cash Flow to Firm (FCFF)", fcf_cr, num_fmt)
+    write_row("Mid Year Convention", mid_year, num_fmt)
+    write_row("Discounting Factor", disc_factor, num_fmt)
+    write_row("PV of FCFF", pv_fcf_cr, num_fmt)
+
+    # ---------- Section 2: PV of FCFF total & key inputs ----------
+    row += 1
+    ws.merge_range(row, start_col, row, start_col + 2, "PV of FCFF", section_title_fmt)
+    ws.write(row, start_col + 3, pv_fcf_total_cr, bold_num_fmt)
+    row += 2
+
+    ws.merge_range(row, start_col, row, start_col + 2, "Expected Growth", row_lbl_fmt)
+    ws.write(row, start_col + 3, growth_rate, pct_fmt)
+    row += 1
+
+    ws.merge_range(row, start_col, row, start_col + 2, "Terminal Growth", row_lbl_fmt)
+    ws.write(row, start_col + 3, term_growth, pct_fmt)
+    row += 1
+
+    ws.merge_range(row, start_col, row, start_col + 2, "WACC", row_lbl_fmt)
+    ws.write(row, start_col + 3, wacc, pct_fmt)
+    row += 2
+
+    # ---------- Section 3: Calculation of Terminal Value ----------
+    ws.merge_range(row, start_col, row, last_col, "Calculation of Terminal Value", title_fmt)
+    row += 1
+
+    fcf_next_cr = fcf_cr[-1] * (1 + term_growth)
+
+    ws.write(row, start_col, "FCFF(t+1)", row_lbl_fmt)
+    ws.write(row, start_col + 1, fcf_next_cr, num_fmt)
+    row += 1
+
+    ws.write(row, start_col, "WACC", row_lbl_fmt)
+    ws.write(row, start_col + 1, wacc, pct_fmt)
+    row += 1
+
+    ws.write(row, start_col, "Terminal Growth", row_lbl_fmt)
+    ws.write(row, start_col + 1, term_growth, pct_fmt)
+    row += 1
+
+    ws.write(row, start_col, "Terminal Value", row_lbl_fmt)
+    ws.write(row, start_col + 1, pv_tv_cr, bold_num_fmt)
+    row += 2
+
+    # ---------- Section 4: Calculation of Equity Value Per Share ----------
+    ws.merge_range(row, start_col, row, last_col, "Calculation of Equity Value per Share", title_fmt)
+    row += 1
+
+    ws.write(row, start_col, "PV of FCFF", row_lbl_fmt)
+    ws.write(row, start_col + 1, pv_fcf_total_cr, num_fmt)
+    row += 1
+
+    ws.write(row, start_col, "PV of Terminal Value", row_lbl_fmt)
+    ws.write(row, start_col + 1, pv_tv_cr, num_fmt)
+    row += 1
+
+    ws.write(row, start_col, "Value of Enterprise", row_lbl_fmt)
+    ws.write(row, start_col + 1, enterprise_cr, bold_num_fmt)
+    row += 1
+
+    ws.write(row, start_col, "Add: Cash", row_lbl_fmt)
+    ws.write(row, start_col + 1, cash_cr, num_fmt)
+    row += 1
+
+    ws.write(row, start_col, "Less: Debt", row_lbl_fmt)
+    ws.write(row, start_col + 1, debt_cr, num_fmt)
+    row += 1
+
+    ws.write(row, start_col, "Value of Equity", row_lbl_fmt)
+    ws.write(row, start_col + 1, equity_cr, bold_num_fmt)
+    row += 1
+
+    ws.write(row, start_col, "No. of Shares (M)", row_lbl_fmt)
+    ws.write(row, start_col + 1, data["shares"] / 1e6, num0_fmt)
+    row += 1
+
+    ws.write(row, start_col, "Equity Value Per Share", row_lbl_fmt)
+    ws.write(row, start_col + 1, implied_price, bold_num_fmt)
+    row += 2
+
+    ws.write(row, start_col, "Share Price", row_lbl_fmt)
+    ws.write(row, start_col + 1, current_price, num_fmt)
+    row += 1
+
+    ws.write(row, start_col, "Discount/Premium", row_lbl_fmt)
+    if current_price > 0:
+        disc = (implied_price / current_price) - 1
+    else:
+        disc = 0.0
+    ws.write(row, start_col + 1, disc, bold_pct_fmt)
+
+    # Adjust column widths
+    ws.set_column(0, 0, 35)  # labels
+    ws.set_column(1, last_col, 14)
 
 # ---------- Waterfall Chart ----------
 def create_valuation_waterfall(ev: float, net_debt: float, equity_value: float, 
@@ -512,25 +665,29 @@ def create_valuation_waterfall(ev: float, net_debt: float, equity_value: float,
     current_mcap = current_price * shares
     
     fig = go.Figure(go.Waterfall(
-        name = "Valuation Bridge",
-        orientation = "v",
-        measure = ["absolute", "relative", "total", "relative", "total"],
-        x = ["Enterprise<br>Value", "Less:<br>Net Debt", "Equity<br>Value", 
-             "vs Current<br>Market Cap", "Implied<br>Upside"],
-        textposition = "outside",
-        text = [f"₹{ev/1e7:.0f}Cr", f"₹{-net_debt/1e7:.0f}Cr", f"₹{implied_mcap/1e7:.0f}Cr",
-                f"₹{(implied_mcap-current_mcap)/1e7:.0f}Cr", 
-                f"{((implied_mcap/current_mcap)-1)*100:.1f}%"],
-        y = [ev, -net_debt, None, implied_mcap - current_mcap, None],
-        connector = {"line":{"color":"rgb(63, 63, 63)"}},
+        name="Valuation Bridge",
+        orientation="v",
+        measure=["absolute", "relative", "total", "relative", "total"],
+        x=["Enterprise<br>Value", "Less:<br>Net Debt", "Equity<br>Value", 
+           "vs Current<br>Market Cap", "Implied<br>Upside"],
+        textposition="outside",
+        text=[
+            f"₹{ev/1e7:.0f}Cr",
+            f"₹{-net_debt/1e7:.0f}Cr",
+            f"₹{implied_mcap/1e7:.0f}Cr",
+            f"₹{(implied_mcap-current_mcap)/1e7:.0f}Cr",
+            f"{((implied_mcap/current_mcap)-1)*100:.1f}%"
+        ],
+        y=[ev, -net_debt, None, implied_mcap - current_mcap, None],
+        connector={"line": {"color": "rgb(63, 63, 63)"}},
     ))
     
     fig.update_layout(
-        title = "DCF Valuation Bridge",
-        showlegend = False,
-        height = 400,
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(20,20,20,0.5)'
+        title="DCF Valuation Bridge",
+        showlegend=False,
+        height=400,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(20,20,20,0.5)"
     )
     
     return fig
@@ -540,26 +697,28 @@ def validate_dcf_assumptions(wacc: float, term_growth: float, fcf: float, fcf_ma
     """Validate DCF inputs and return list of issues"""
     issues = []
     
-    # Critical: WACC <= Terminal Growth
     if wacc <= term_growth:
-        issues.append(f"🚨 CRITICAL: WACC ({wacc:.1%}) ≤ Terminal Growth ({term_growth:.1%}). This is mathematically invalid for Gordon Growth Model. Terminal value will explode to infinity.")
+        issues.append(
+            f"🚨 CRITICAL: WACC ({wacc:.1%}) ≤ Terminal Growth ({term_growth:.1%}). "
+            "This is mathematically invalid for Gordon Growth Model."
+        )
     
-    # Terminal growth too high
     if term_growth > MAX_TERMINAL_GROWTH_INDIA:
-        issues.append(f"⚠️ Terminal Growth ({term_growth:.1%}) > {MAX_TERMINAL_GROWTH_INDIA:.1%} (India GDP+Inflation). Long-term growth above economy is unrealistic.")
+        issues.append(
+            f"⚠️ Terminal Growth ({term_growth:.1%}) > {MAX_TERMINAL_GROWTH_INDIA:.1%} "
+            "(India GDP+Inflation). Long-term growth above economy is unrealistic."
+        )
     
-    # WACC out of reasonable range
     if wacc < MIN_WACC:
         issues.append(f"⚠️ WACC ({wacc:.1%}) is very low. Check if Rf and Beta are correct.")
     elif wacc > MAX_WACC:
         issues.append(f"⚠️ WACC ({wacc:.1%}) is very high. Company may be extremely risky or inputs incorrect.")
     
-    # FCF issues
     if fcf <= 0:
         issues.append(f"🚨 CRITICAL: Negative FCF (₹{fcf/1e7:,.0f} Cr). DCF assumes positive future cash flows.")
     
     if fcf_margin < 0:
-        issues.append(f"⚠️ Negative FCF margin. High growth projections with negative FCF are aggressive.")
+        issues.append("⚠️ Negative FCF margin. High growth projections with negative FCF are aggressive.")
     
     return issues
 
@@ -578,8 +737,8 @@ clean_ticker = ticker_input.upper().replace(".NS", "").strip()
 full_ticker = f"{clean_ticker}.NS"
 
 with st.spinner(f"📊 Loading {clean_ticker} data..."):
-    rf_rate = get_risk_free_rate()
     data_payload, dq_tracker = load_ticker_payload(full_ticker)
+    rf_rate = get_risk_free_rate()
 
 # Critical Error Check
 if not data_payload or dq_tracker.has_critical_errors():
@@ -676,14 +835,19 @@ with tab_wacc:
             levered_beta = st.number_input("Levered Beta", value=1.0, step=0.1)
             r_squared = 0.0
             fig_beta = None
-            beta_issues = []
+            beta_issues: List[str] = []
         else:
-            period = st.selectbox("Regression Period", ["6mo", "1y", "2y", "5y"], index=2, 
-                                 help="Longer period = more stable but less recent")
+            period = st.selectbox(
+                "Regression Period", ["6mo", "1y", "2y", "5y"], index=2,
+                help="Longer period = more stable but less recent"
+            )
             reg_beta, r_squared, fig_beta, msg, beta_issues = calculate_beta_regression(full_ticker, "^NSEI", period)
             
-            use_blume = st.checkbox("Apply Blume Adjustment", value=True, 
-                                    help="βadj = (2/3)β + (1/3) - regresses beta toward market average")
+            use_blume = st.checkbox(
+                "Apply Blume Adjustment",
+                value=True,
+                help="βadj = (2/3)β + (1/3) - regresses beta toward market average"
+            )
             levered_beta = (0.67 * reg_beta + 0.33) if use_blume else reg_beta
             
             st.metric("Raw Beta", f"{reg_beta:.3f}")
@@ -701,18 +865,21 @@ with tab_wacc:
         # Unlevered Beta
         unlevered_beta = calculate_unlevered_beta(
             levered_beta, 
-            data_payload['debt'], 
-            data_payload['mcap'], 
+            data_payload["debt"], 
+            data_payload["mcap"], 
             tax
         )
-        st.metric("Unlevered Beta", f"{unlevered_beta:.3f}", 
-                 help="Beta without debt impact: βu = βl / [1 + (1-T)(D/E)]")
+        st.metric(
+            "Unlevered Beta",
+            f"{unlevered_beta:.3f}",
+            help="Beta without debt impact: βu = βl / [1 + (1-T)(D/E)]"
+        )
         
         st.divider()
         st.subheader("Cost of Debt")
         
         # Interest Coverage Ratio
-        icr = safe_div(data_payload['ebitda'], data_payload['interest'], 100)
+        icr = safe_div(data_payload["ebitda"], data_payload["interest"], 100)
         st.metric("Interest Coverage Ratio", f"{icr:.2f}x", help="EBITDA / Interest Expense")
         
         # Credit Spread Logic
@@ -732,12 +899,15 @@ with tab_wacc:
         st.write(f"**Implied Credit Rating:** {rating}")
         
         # Manual override option
-        manual_kd = st.checkbox("Override Cost of Debt", value=False, 
-                               help="Use if auto-calculated spread seems unreasonable")
+        manual_kd = st.checkbox(
+            "Override Cost of Debt",
+            value=False,
+            help="Use if auto-calculated spread seems unreasonable"
+        )
         
         if manual_kd:
             spread_adj = st.number_input("Credit Spread (bps)", value=int(spread*10000), step=10)/10000
-            st.caption("💡 Typical: 10-25bps (AAA), 25-50bps (A/BBB), 50-100bps (BB/B), 100+bps (High Yield)")
+            st.caption("💡 Typical: 10–25bps (AAA), 25–50bps (A/BBB), 50–100bps (BB/B), 100+bps (High Yield)")
         else:
             spread_adj = spread
         
@@ -754,36 +924,36 @@ with tab_wacc:
         ke = rf + (levered_beta * erp)
         
         # Capital Structure
-        E = data_payload['mcap']
-        D = data_payload['debt']
+        E = data_payload["mcap"]
+        D = data_payload["debt"]
         V = E + D if (E + D) > 0 else 1
         
         weight_e = E / V
         weight_d = D / V
         
-        # Cap debt weight if missing data
-        if D == 0 and data_payload['interest'] > 0:
+        if D == 0 and data_payload["interest"] > 0:
             st.warning("⚠️ Debt is zero but interest exists. Check balance sheet data.")
         
-        # WACC
         wacc = (weight_e * ke) + (weight_d * rd_aftertax)
         
-        # Display
-        st.markdown(f"""
-        <div style="background: linear-gradient(135deg, #1b5e20 0%, #2e7d32 100%); 
-                    padding: 30px; border-radius: 15px; text-align: center; margin: 20px 0;">
-            <div style="font-size: 0.9rem; color: #a5d6a7; text-transform: uppercase; 
-                        letter-spacing: 2px; margin-bottom: 10px;">
-                Weighted Average Cost of Capital
+        st.markdown(
+            f"""
+            <div style="background: linear-gradient(135deg, #1b5e20 0%, #2e7d32 100%); 
+                        padding: 30px; border-radius: 15px; text-align: center; margin: 20px 0;">
+                <div style="font-size: 0.9rem; color: #a5d6a7; text-transform: uppercase; 
+                            letter-spacing: 2px; margin-bottom: 10px;">
+                    Weighted Average Cost of Capital
+                </div>
+                <div style="font-size: 3.5rem; font-weight: 800; color: #ffffff; margin: 15px 0;">
+                    {wacc:.2%}
+                </div>
+                <div style="font-size: 1rem; color: #c8e6c9; margin-top: 15px;">
+                    Ke: {ke:.2%} | Kd(AT): {rd_aftertax:.2%} | β: {levered_beta:.2f}
+                </div>
             </div>
-            <div style="font-size: 3.5rem; font-weight: 800; color: #ffffff; margin: 15px 0;">
-                {wacc:.2%}
-            </div>
-            <div style="font-size: 1rem; color: #c8e6c9; margin-top: 15px;">
-                Ke: {ke:.2%} | Kd(AT): {rd_aftertax:.2%} | β: {levered_beta:.2f}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+            """,
+            unsafe_allow_html=True,
+        )
         
         st.caption("**Formula:** WACC = (E/V × Ke) + (D/V × Kd × (1-T))")
         
@@ -794,42 +964,41 @@ with tab_wacc:
         # Detailed calculation logic for auditability
         with st.expander("See Calculation Logic"):
             st.latex(r"WACC = \frac{E}{V} \times R_e + \frac{D}{V} \times R_d \times (1 - T)")
-            st.markdown(f"""
-            **Inputs used:**
-            - Equity Weight (E/V): **{weight_e:.2%}**
-            - Cost of Equity (Re): **{ke:.2%}**
-            - Debt Weight (D/V): **{weight_d:.2%}**
-            - Cost of Debt (Rd): **{rd_pretax:.2%}**
-            - Tax Rate (T): **{tax:.2%}**
-            """)
+            st.markdown(
+                f"""
+                **Inputs used:**
+                - Equity Weight (E/V): **{weight_e:.2%}**
+                - Cost of Equity (Re): **{ke:.2%}**
+                - Debt Weight (D/V): **{weight_d:.2%}**
+                - Cost of Debt (Rd): **{rd_pretax:.2%}**
+                - Tax Rate (T): **{tax:.2%}**
+                """
+            )
         
-        # Beta Regression Chart
-        if fig_beta:
+        if "fig_beta" in locals() and fig_beta:
             st.plotly_chart(fig_beta, use_container_width=True)
         
-        # Capital Structure Breakdown
         st.subheader("Capital Structure (Market Values)")
-        col1, col2 = st.columns(2)
+        col1_, col2_ = st.columns(2)
         
-        with col1:
+        with col1_:
             st.metric("Equity Weight", f"{weight_e:.1%}")
             st.metric("Market Cap", f"₹{E/1e7:,.0f} Cr")
         
-        with col2:
+        with col2_:
             st.metric("Debt Weight", f"{weight_d:.1%}")
             st.metric("Total Debt", f"₹{D/1e7:,.0f} Cr")
         
-        # Pie Chart
         fig_cap = go.Figure(data=[go.Pie(
-            labels=['Equity', 'Debt'],
+            labels=["Equity", "Debt"],
             values=[E, D],
             hole=0.4,
-            marker_colors=['#4caf50', '#ff6f00']
+            marker_colors=["#4caf50", "#ff6f00"]
         )])
         fig_cap.update_layout(
             title="Capital Structure",
             height=300,
-            paper_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor="rgba(0,0,0,0)",
             showlegend=True
         )
         st.plotly_chart(fig_cap, use_container_width=True)
@@ -843,23 +1012,27 @@ with tab_dcf:
     with col_assumptions:
         st.subheader("📋 DCF Assumptions")
         
-        # Apply scenario defaults
         default_growth = scenario_params[scenario]["growth"]
         default_tg = scenario_params[scenario]["term_growth"]
         wacc_adjustment = scenario_params[scenario]["wacc_adj"]
         
-        forecast_years = st.slider("Forecast Period (Years)", 3, 10, 5, 
-                                   help="Years of explicit FCF projection")
-        growth_rate = st.number_input("Growth Rate (Explicit Period, %)", 
-                                     value=default_growth, step=1.0)/100
-        terminal_growth = st.number_input("Terminal Growth (%)", 
-                                         value=default_tg, step=0.5, 
-                                         help="Perpetual growth rate after explicit period")/100
-        wacc_dcf = st.number_input("WACC (%)", 
-                                   value=(wacc + wacc_adjustment)*100, step=0.1)/100
+        forecast_years = st.slider("Forecast Period (Years)", 3, 10, 5, help="Years of explicit FCF projection")
+        growth_rate = st.number_input(
+            "Growth Rate (Explicit Period, %)", value=default_growth, step=1.0
+        )/100
+        terminal_growth = st.number_input(
+            "Terminal Growth (%)", value=default_tg, step=0.5,
+            help="Perpetual growth rate after explicit period"
+        )/100
+        wacc_dcf = st.number_input(
+            "WACC (%)", value=(wacc + wacc_adjustment)*100, step=0.1
+        )/100
         
-        use_midyear = st.checkbox("Mid-year Convention", value=True,
-                                 help="Assumes cash flows occur mid-year (more realistic)")
+        use_midyear = st.checkbox(
+            "Mid-year Convention",
+            value=True,
+            help="Assumes cash flows occur mid-year (more realistic)"
+        )
         
         st.divider()
         st.write("**Starting Metrics (TTM)**")
@@ -867,9 +1040,9 @@ with tab_dcf:
         st.metric("EBITDA", f"₹{data_payload['ebitda']/1e7:,.0f} Cr")
         st.metric("Net Debt", f"₹{data_payload['net_debt']/1e7:,.0f} Cr")
         
-        # Validation
-        dcf_issues = validate_dcf_assumptions(wacc_dcf, terminal_growth, 
-                                              data_payload['fcf'], data_payload['fcf_margin'])
+        dcf_issues = validate_dcf_assumptions(
+            wacc_dcf, terminal_growth, data_payload["fcf"], data_payload["fcf_margin"]
+        )
         
         if dcf_issues:
             st.divider()
@@ -880,20 +1053,16 @@ with tab_dcf:
     with col_results:
         st.subheader("📊 DCF Valuation Results")
         
-        # Check for critical validation failures
         if wacc_dcf <= terminal_growth:
             st.error("🚨 **CANNOT CALCULATE:** WACC ≤ Terminal Growth. Adjust assumptions above.")
             st.stop()
         
-        # Project Free Cash Flows
         years = list(range(1, forecast_years + 1))
-        fcf_projections = [data_payload['fcf'] * ((1 + growth_rate) ** i) for i in years]
+        fcf_projections = [data_payload["fcf"] * ((1 + growth_rate) ** i) for i in years]
         
-        # Terminal Value
         terminal_fcf = fcf_projections[-1] * (1 + terminal_growth)
         terminal_value = terminal_fcf / (wacc_dcf - terminal_growth)
         
-        # Present Values
         if use_midyear:
             discount_factors = [1 / ((1 + wacc_dcf) ** (y - 0.5)) for y in years]
             tv_discount = 1 / ((1 + wacc_dcf) ** (forecast_years - 0.5))
@@ -904,54 +1073,59 @@ with tab_dcf:
         pv_fcf_explicit = sum([fcf * df for fcf, df in zip(fcf_projections, discount_factors)])
         pv_terminal = terminal_value * tv_discount
         
-        # Equity Value
         enterprise_value = pv_fcf_explicit + pv_terminal
-        equity_value = enterprise_value - data_payload['net_debt']
-        implied_price = safe_div(equity_value, data_payload['shares'])
+        equity_value = enterprise_value - data_payload["net_debt"]
+        implied_price = safe_div(equity_value, data_payload["shares"])
         
-        # Current vs Implied
-        current_price = data_payload['price']
+        current_price = data_payload["price"]
         upside = ((implied_price / current_price) - 1) * 100 if current_price > 0 else 0
         
-        # Display Results
         res_col1, res_col2, res_col3 = st.columns(3)
         
         with res_col1:
-            st.markdown(f"""
-            <div style="background:#1a237e;padding:15px;border-radius:8px;text-align:center;">
-                <div style="font-size:0.75rem;color:#9fa8da;">Enterprise Value</div>
-                <div style="font-size:1.8rem;font-weight:700;color:#fff;">₹{enterprise_value/1e7:,.0f} Cr</div>
-                <div style="font-size:0.7rem;color:#9fa8da;margin-top:5px;">PV Explicit + Terminal</div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(
+                f"""
+                <div style="background:#1a237e;padding:15px;border-radius:8px;text-align:center;">
+                    <div style="font-size:0.75rem;color:#9fa8da;">Enterprise Value</div>
+                    <div style="font-size:1.8rem;font-weight:700;color:#fff;">₹{enterprise_value/1e7:,.0f} Cr</div>
+                    <div style="font-size:0.7rem;color:#9fa8da;margin-top:5px;">PV Explicit + Terminal</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
         
         with res_col2:
-            st.markdown(f"""
-            <div style="background:#1b5e20;padding:15px;border-radius:8px;text-align:center;">
-                <div style="font-size:0.75rem;color:#a5d6a7;">Equity Value</div>
-                <div style="font-size:1.8rem;font-weight:700;color:#fff;">₹{equity_value/1e7:,.0f} Cr</div>
-                <div style="font-size:0.7rem;color:#a5d6a7;margin-top:5px;">EV - Net Debt</div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(
+                f"""
+                <div style="background:#1b5e20;padding:15px;border-radius:8px;text-align:center;">
+                    <div style="font-size:0.75rem;color:#a5d6a7;">Equity Value</div>
+                    <div style="font-size:1.8rem;font-weight:700;color:#fff;">₹{equity_value/1e7:,.0f} Cr</div>
+                    <div style="font-size:0.7rem;color:#a5d6a7;margin-top:5px;">EV - Net Debt</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
         
         with res_col3:
             color = "#4caf50" if upside > 0 else "#f44336"
-            st.markdown(f"""
-            <div style="background:{color};padding:15px;border-radius:8px;text-align:center;">
-                <div style="font-size:0.75rem;color:#fff;">Implied Price</div>
-                <div style="font-size:1.8rem;font-weight:700;color:#fff;">₹{implied_price:,.0f}</div>
-                <div style="font-size:0.85rem;color:#fff;margin-top:5px;">
-                    {upside:+.1f}% vs Current
+            st.markdown(
+                f"""
+                <div style="background:{color};padding:15px;border-radius:8px;text-align:center;">
+                    <div style="font-size:0.75rem;color:#fff;">Implied Price</div>
+                    <div style="font-size:1.8rem;font-weight:700;color:#fff;">₹{implied_price:,.0f}</div>
+                    <div style="font-size:0.85rem;color:#fff;margin-top:5px;">
+                        {upside:+.1f}% vs Current
+                    </div>
                 </div>
-            </div>
-            """, unsafe_allow_html=True)
+                """,
+                unsafe_allow_html=True,
+            )
         
         st.divider()
         
-        # DCF Schedule (numeric + Styler formatting)
         st.subheader("Free Cash Flow Forecast")
         
-        fcf_display = [data_payload['fcf']/1e7] + [f/1e7 for f in fcf_projections] + [terminal_fcf/1e7]
+        fcf_display = [data_payload["fcf"]/1e7] + [f/1e7 for f in fcf_projections] + [terminal_fcf/1e7]
         pv_display = [np.nan] + [(f*df)/1e7 for f, df in zip(fcf_projections, discount_factors)] + [pv_terminal/1e7]
         
         df_fcf = pd.DataFrame({
@@ -973,36 +1147,74 @@ with tab_dcf:
             hide_index=True
         )
         
-        # Valuation Bridge Waterfall
         st.subheader("Valuation Bridge")
         st.caption("Shows how we get from Enterprise Value to Implied Share Price")
         fig_waterfall = create_valuation_waterfall(
-            enterprise_value, data_payload['net_debt'], 
-            equity_value, current_price, data_payload['shares']
+            enterprise_value, data_payload["net_debt"],
+            equity_value, current_price, data_payload["shares"]
         )
         st.plotly_chart(fig_waterfall, use_container_width=True)
         
-        # Excel Export (audit-ready section)
         st.divider()
-        df_schedule, df_summary = create_professional_dcf_excel(
-            data_payload, years, fcf_projections, wacc_dcf, 
-            terminal_growth, pv_terminal, equity_value, implied_price, tax
-        )
-        
+
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-            df_schedule.to_excel(writer, sheet_name="DCF_Schedule")
-            df_summary.to_excel(writer, sheet_name="Summary", index=False)
-            
-            # Assumptions
+            workbook = writer.book
+
+            create_professional_dcf_excel(
+                workbook=workbook,
+                data=data_payload,
+                years=years,
+                fcf_proj=fcf_projections,
+                wacc=wacc_dcf,
+                term_growth=terminal_growth,
+                pv_tv=pv_terminal,
+                equity_value=equity_value,
+                implied_price=implied_price,
+                tax_rate=tax,
+                growth_rate=growth_rate,
+                current_price=current_price,
+            )
+
+            df_summary_export = pd.DataFrame({
+                "Item": [
+                    "PV of FCFF (Cr)",
+                    "PV of Terminal Value (Cr)",
+                    "Enterprise Value (Cr)",
+                    "Net Debt (Cr)",
+                    "Equity Value (Cr)",
+                    "Implied Price",
+                    "Current Price",
+                    "Upside (%)",
+                ],
+                "Value": [
+                    pv_fcf_explicit/1e7,
+                    pv_terminal/1e7,
+                    enterprise_value/1e7,
+                    data_payload["net_debt"]/1e7,
+                    equity_value/1e7,
+                    implied_price,
+                    current_price,
+                    upside,
+                ],
+            })
+            df_summary_export.to_excel(writer, sheet_name="Summary", index=False)
+
             df_assumptions = pd.DataFrame({
-                "Parameter": ["Ticker", "Scenario", "Forecast Years", "Growth Rate", 
-                             "Terminal Growth", "WACC", "Tax Rate", "Risk Free", "Beta", "Date"],
-                "Value": [clean_ticker, scenario, forecast_years, growth_rate, 
-                         terminal_growth, wacc_dcf, tax, rf, levered_beta, datetime.now().strftime('%Y-%m-%d')]
+                "Parameter": [
+                    "Ticker", "Scenario", "Forecast Years",
+                    "Growth Rate (Explicit)", "Terminal Growth",
+                    "WACC (DCF)", "Tax Rate", "Risk Free", "Beta", "Date"
+                ],
+                "Value": [
+                    clean_ticker, scenario, forecast_years,
+                    growth_rate, terminal_growth,
+                    wacc_dcf, tax, rf, levered_beta,
+                    datetime.now().strftime("%Y-%m-%d"),
+                ],
             })
             df_assumptions.to_excel(writer, sheet_name="Assumptions", index=False)
-        
+
         with st.container():
             st.success("Model ready for export.")
             st.caption(
@@ -1012,7 +1224,7 @@ with tab_dcf:
                 "📥 Export Audit-Ready Excel Model",
                 data=buffer.getvalue(),
                 file_name=f"{clean_ticker}_DCF_{scenario.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
 
 # ========== TAB 3: SENSITIVITY ANALYSIS ==========
@@ -1021,55 +1233,51 @@ with tab_sens:
     
     st.subheader("🎯 DCF Sensitivity Analysis")
     
-    col1, col2 = st.columns([2, 1])
+    col1_s, col2_s = st.columns([2, 1])
     
-    with col2:
+    with col2_s:
         st.write("**Reference Values**")
         st.metric("Base WACC", f"{wacc_dcf:.2%}")
         st.metric("Base Terminal Growth", f"{terminal_growth:.2%}")
         st.metric("Current Price", f"₹{current_price:,.0f}")
     
-    with col1:
-        # Generate Sensitivity Table
+    with col1_s:
         sens_table = create_sensitivity_table(
-            data_payload['fcf'], wacc_dcf, growth_rate,
-            data_payload['net_debt'], data_payload['shares'],
+            data_payload["fcf"], wacc_dcf, growth_rate,
+            data_payload["net_debt"], data_payload["shares"],
             forecast_years
         )
         
-        # Replace invalid (0) combos with NaN for clearer styling
         sens_for_display = sens_table.replace(0, np.nan)
         
         def highlight_current(val):
             if pd.isna(val):
-                # invalid combo (WACC <= g)
-                return 'background-color: #b71c1c; color: white'
+                return "background-color: #b71c1c; color: white"
             diff_pct = abs((val - current_price) / current_price)
             if diff_pct < 0.05:
-                return 'background-color: #1b5e20; font-weight: bold'
+                return "background-color: #1b5e20; font-weight: bold"
             elif diff_pct < 0.15:
-                return 'background-color: #2e7d32'
-            return ''
+                return "background-color: #2e7d32"
+            return ""
         
         styled_sens = sens_for_display.style.format("₹{:,.0f}").applymap(highlight_current)
         st.dataframe(styled_sens, use_container_width=True)
         
-        st.caption("💡 **Green cells:** Within 5-15% of current price | **Red cells:** Invalid (WACC ≤ Terminal Growth)")
+        st.caption("💡 **Green cells:** Within 5–15% of current price | **Red cells:** Invalid (WACC ≤ Terminal Growth)")
 
     st.divider()
     
-    # Heatmap Visualization
     st.subheader("Valuation Heatmap")
     
     fig_heatmap = go.Figure(data=go.Heatmap(
         z=sens_table.values,
         x=sens_table.columns,
         y=sens_table.index,
-        colorscale='RdYlGn',
+        colorscale="RdYlGn",
         text=sens_table.values,
         texttemplate="₹%{text:,.0f}",
-        textfont={"size":9},
-        hovertemplate='WACC: %{x}<br>Term Growth: %{y}<br>Price: ₹%{z:,.0f}<extra></extra>'
+        textfont={"size": 9},
+        hovertemplate="WACC: %{x}<br>Term Growth: %{y}<br>Price: ₹%{z:,.0f}<extra></extra>"
     ))
     
     fig_heatmap.update_layout(
@@ -1077,8 +1285,8 @@ with tab_sens:
         xaxis_title="WACC →",
         yaxis_title="Terminal Growth →",
         height=500,
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(20,20,20,0.5)'
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(20,20,20,0.5)"
     )
     
     st.plotly_chart(fig_heatmap, use_container_width=True)
@@ -1089,7 +1297,6 @@ with tab_comps:
     
     st.subheader("⚖️ Comparable Companies Analysis")
     
-    # Auto-suggest peers
     default_peers = ", ".join(SECTOR_MAP.get(clean_ticker, ["TCS.NS", "INFY.NS"]))
     
     peer_input = st.text_area(
@@ -1100,15 +1307,18 @@ with tab_comps:
     )
     
     if len(clean_peer_list(peer_input)) > MAX_PEERS:
-        st.warning(f"⚠️ You entered {len(clean_peer_list(peer_input))} peers. This may be slow. Consider reducing to top {MAX_PEERS}.")
+        st.warning(
+            f"⚠️ You entered {len(clean_peer_list(peer_input))} peers. "
+            f"This may be slow. Consider reducing to top {MAX_PEERS}."
+        )
     
-    col1, col2 = st.columns([3, 1])
+    col1_c, col2_c = st.columns([3, 1])
     
-    with col2:
+    with col2_c:
         run_comps = st.button("🔍 Analyze Peers", type="primary", use_container_width=True)
     
-    if run_comps or 'comps_data' in st.session_state:
-        with st.spinner("Fetching peer data (this may take 30-60 sec for many peers)..."):
+    if run_comps or "comps_data" in st.session_state:
+        with st.spinner("Fetching peer data (this may take 30–60 sec for many peers)..."):
             peer_list = clean_peer_list(peer_input)
             peer_list = [p for p in peer_list if p != full_ticker]
             
@@ -1120,7 +1330,7 @@ with tab_comps:
                         st.warning(issue)
             
             if df_peers is not None and not df_peers.empty:
-                st.session_state['comps_data'] = df_peers
+                st.session_state["comps_data"] = df_peers
                 
                 st.dataframe(
                     df_peers.style.format({
@@ -1140,14 +1350,12 @@ with tab_comps:
                 
                 st.divider()
                 
-                # Statistical Analysis
                 st.subheader("Trading Multiple Statistics")
                 
                 stats_col1, stats_col2 = st.columns(2)
                 
                 with stats_col1:
-                    # EV/EBITDA Analysis
-                    ev_ebitda_valid = df_peers['EV/EBITDA'].replace([np.inf, -np.inf], np.nan).dropna()
+                    ev_ebitda_valid = df_peers["EV/EBITDA"].replace([np.inf, -np.inf], np.nan).dropna()
                     
                     if len(ev_ebitda_valid) > 0:
                         ev_stats = {
@@ -1159,17 +1367,18 @@ with tab_comps:
                             "Max": ev_ebitda_valid.max()
                         }
                         
-                        df_ev_stats = pd.DataFrame(list(ev_stats.items()), 
-                                                  columns=["Statistic", "EV/EBITDA"])
+                        df_ev_stats = pd.DataFrame(list(ev_stats.items()), columns=["Statistic", "EV/EBITDA"])
                         st.write("**EV/EBITDA Multiples**")
-                        st.dataframe(df_ev_stats.style.format({"EV/EBITDA": "{:.2f}x"}), 
-                                   hide_index=True, use_container_width=True)
+                        st.dataframe(
+                            df_ev_stats.style.format({"EV/EBITDA": "{:.2f}x"}),
+                            hide_index=True,
+                            use_container_width=True
+                        )
                     else:
                         st.warning("No valid EV/EBITDA data from peers")
                 
                 with stats_col2:
-                    # P/E Analysis
-                    pe_valid = df_peers['P/E'].replace([np.inf, -np.inf], np.nan).dropna()
+                    pe_valid = df_peers["P/E"].replace([np.inf, -np.inf], np.nan).dropna()
                     
                     if len(pe_valid) > 0:
                         pe_stats = {
@@ -1181,22 +1390,22 @@ with tab_comps:
                             "Max": pe_valid.max()
                         }
                         
-                        df_pe_stats = pd.DataFrame(list(pe_stats.items()), 
-                                                  columns=["Statistic", "P/E"])
+                        df_pe_stats = pd.DataFrame(list(pe_stats.items()), columns=["Statistic", "P/E"])
                         st.write("**P/E Multiples**")
-                        st.dataframe(df_pe_stats.style.format({"P/E": "{:.2f}x"}), 
-                                   hide_index=True, use_container_width=True)
+                        st.dataframe(
+                            df_pe_stats.style.format({"P/E": "{:.2f}x"}),
+                            hide_index=True,
+                            use_container_width=True
+                        )
                     else:
                         st.warning("No valid P/E data from peers")
                 
                 st.divider()
                 
-                # Implied Valuation
                 st.subheader("Implied Valuation from Peer Multiples")
                 st.caption("Apply peer multiples to target company metrics to estimate fair value")
                 
                 if len(ev_ebitda_valid) > 0:
-                    # Calculate implied prices at different percentiles
                     percentiles = {
                         "Bear (25th %ile)": ev_ebitda_valid.quantile(0.25),
                         "Base (Median)": ev_ebitda_valid.median(),
@@ -1204,52 +1413,53 @@ with tab_comps:
                     }
                     
                     def calc_price_from_multiple(multiple):
-                        implied_ev = data_payload['ebitda'] * multiple
-                        implied_equity = implied_ev - data_payload['net_debt']
-                        return safe_div(implied_equity, data_payload['shares'])
+                        implied_ev = data_payload["ebitda"] * multiple
+                        implied_equity = implied_ev - data_payload["net_debt"]
+                        return safe_div(implied_equity, data_payload["shares"])
                     
                     val_col1, val_col2, val_col3 = st.columns(3)
                     
                     results = {}
                     for idx, (label, mult) in enumerate(percentiles.items()):
-                        price = calc_price_from_multiple(mult)
-                        results[label] = price
-                        upside = ((price / current_price) - 1) * 100
+                        price_mult = calc_price_from_multiple(mult)
+                        results[label] = price_mult
+                        up_mult = ((price_mult / current_price) - 1) * 100
                         
-                        col = [val_col1, val_col2, val_col3][idx]
-                        color = "#c62828" if "Bear" in label else ("#1b5e20" if "Bull" in label else "#1565c0")
+                        col_ = [val_col1, val_col2, val_col3][idx]
+                        color_ = "#c62828" if "Bear" in label else ("#1b5e20" if "Bull" in label else "#1565c0")
                         
-                        col.markdown(f"""
-                        <div style="background:{color};padding:20px;border-radius:10px;text-align:center;">
-                            <div style="font-size:0.8rem;color:#fff;opacity:0.9;">{label}</div>
-                            <div style="font-size:2rem;font-weight:700;color:#fff;margin:10px 0;">
-                                ₹{price:,.0f}
+                        col_.markdown(
+                            f"""
+                            <div style="background:{color_};padding:20px;border-radius:10px;text-align:center;">
+                                <div style="font-size:0.8rem;color:#fff;opacity:0.9;">{label}</div>
+                                <div style="font-size:2rem;font-weight:700;color:#fff;margin:10px 0;">
+                                    ₹{price_mult:,.0f}
+                                </div>
+                                <div style="font-size:0.85rem;color:#fff;opacity:0.8;">
+                                    {mult:.2f}x EV/EBITDA<br>
+                                    {up_mult:+.1f}% vs Current
+                                </div>
                             </div>
-                            <div style="font-size:0.85rem;color:#fff;opacity:0.8;">
-                                {mult:.2f}x EV/EBITDA<br>
-                                {upside:+.1f}% vs Current
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                            """,
+                            unsafe_allow_html=True,
+                        )
                     
-                    # Store for football field
-                    st.session_state['comps_results'] = results
+                    st.session_state["comps_results"] = results
                     
-                    # Box Plot
                     st.divider()
                     fig_box = go.Figure()
                     fig_box.add_trace(go.Box(
                         y=ev_ebitda_valid,
-                        name='EV/EBITDA',
-                        marker_color='#2196f3',
-                        boxmean='sd'
+                        name="EV/EBITDA",
+                        marker_color="#2196f3",
+                        boxmean="sd"
                     ))
                     fig_box.update_layout(
                         title="Peer EV/EBITDA Distribution",
                         yaxis_title="EV/EBITDA Multiple",
                         height=400,
-                        paper_bgcolor='rgba(0,0,0,0)',
-                        plot_bgcolor='rgba(20,20,20,0.5)',
+                        paper_bgcolor="rgba(0,0,0,0)",
+                        plot_bgcolor="rgba(20,20,20,0.5)",
                         showlegend=False
                     )
                     st.plotly_chart(fig_box, use_container_width=True)
@@ -1263,14 +1473,12 @@ with tab_summ:
     
     st.subheader("🏆 Valuation Summary - Football Field Chart")
     
-    # Check if we have both DCF and Comps results
-    has_dcf = 'implied_price' in locals() and implied_price > 0
-    has_comps = 'comps_results' in st.session_state
+    has_dcf = "implied_price" in locals() and implied_price > 0
+    has_comps = "comps_results" in st.session_state
     
     if has_dcf or has_comps:
         fig_football = go.Figure()
         
-        # DCF Valuation
         if has_dcf:
             dcf_low = implied_price * 0.85
             dcf_high = implied_price * 1.15
@@ -1279,27 +1487,24 @@ with tab_summ:
                 y=[f"DCF<br>({scenario})"],
                 x=[dcf_high - dcf_low],
                 base=[dcf_low],
-                orientation='h',
-                name='DCF',
-                marker_color='#4caf50',
-                hovertemplate=f'<b>DCF Range</b><br>Low: ₹{dcf_low:,.0f}<br>High: ₹{dcf_high:,.0f}<br>Mid: ₹{implied_price:,.0f}<extra></extra>'
+                orientation="h",
+                name="DCF",
+                marker_color="#4caf50",
+                hovertemplate=f"<b>DCF Range</b><br>Low: ₹{dcf_low:,.0f}<br>High: ₹{dcf_high:,.0f}<br>Mid: ₹{implied_price:,.0f}<extra></extra>"
             ))
             
-            # Add midpoint marker
             fig_football.add_trace(go.Scatter(
                 y=[f"DCF<br>({scenario})"],
                 x=[implied_price],
-                mode='markers',
-                marker=dict(size=15, color='white', symbol='diamond', 
-                           line=dict(color='#4caf50', width=2)),
-                name='DCF Midpoint',
+                mode="markers",
+                marker=dict(size=15, color="white", symbol="diamond", line=dict(color="#4caf50", width=2)),
+                name="DCF Midpoint",
                 showlegend=False,
-                hovertemplate=f'<b>DCF</b><br>₹{implied_price:,.0f}<extra></extra>'
+                hovertemplate=f"<b>DCF</b><br>₹{implied_price:,.0f}<extra></extra>"
             ))
         
-        # Comps Valuation
         if has_comps:
-            comps = st.session_state['comps_results']
+            comps = st.session_state["comps_results"]
             bear = comps.get("Bear (25th %ile)", 0)
             base = comps.get("Base (Median)", 0)
             bull = comps.get("Bull (75th %ile)", 0)
@@ -1309,25 +1514,22 @@ with tab_summ:
                     y=["Trading<br>Comps"],
                     x=[bull - bear],
                     base=[bear],
-                    orientation='h',
-                    name='Comps',
-                    marker_color='#2196f3',
-                    hovertemplate=f'<b>Comps Range</b><br>Bear: ₹{bear:,.0f}<br>Base: ₹{base:,.0f}<br>Bull: ₹{bull:,.0f}<extra></extra>'
+                    orientation="h",
+                    name="Comps",
+                    marker_color="#2196f3",
+                    hovertemplate=f"<b>Comps Range</b><br>Bear: ₹{bear:,.0f}<br>Base: ₹{base:,.0f}<br>Bull: ₹{bull:,.0f}<extra></extra>"
                 ))
                 
-                # Add midpoint marker
                 fig_football.add_trace(go.Scatter(
                     y=["Trading<br>Comps"],
                     x=[base],
-                    mode='markers',
-                    marker=dict(size=15, color='white', symbol='diamond',
-                               line=dict(color='#2196f3', width=2)),
-                    name='Comps Median',
+                    mode="markers",
+                    marker=dict(size=15, color="white", symbol="diamond", line=dict(color="#2196f3", width=2)),
+                    name="Comps Median",
                     showlegend=False,
-                    hovertemplate=f'<b>Comps Median</b><br>₹{base:,.0f}<extra></extra>'
+                    hovertemplate=f"<b>Comps Median</b><br>₹{base:,.0f}<extra></extra>"
                 ))
         
-        # Current Price Line
         fig_football.add_vline(
             x=current_price,
             line_dash="dash",
@@ -1341,16 +1543,15 @@ with tab_summ:
             title=f"{clean_ticker} - Valuation Summary",
             xaxis_title="Implied Price (₹)",
             height=400,
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(20,20,20,0.5)',
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(20,20,20,0.5)",
             showlegend=True,
-            barmode='overlay',
-            xaxis=dict(gridcolor='rgba(128,128,128,0.2)')
+            barmode="overlay",
+            xaxis=dict(gridcolor="rgba(128,128,128,0.2)")
         )
         
         st.plotly_chart(fig_football, use_container_width=True)
         
-        # Summary Table
         st.divider()
         st.subheader("Valuation Summary Table")
         
@@ -1366,7 +1567,7 @@ with tab_summ:
             })
         
         if has_comps:
-            comps = st.session_state['comps_results']
+            comps = st.session_state["comps_results"]
             summary_data.append({
                 "Method": "Trading Comps",
                 "Low": comps.get("Bear (25th %ile)", 0),
@@ -1378,7 +1579,6 @@ with tab_summ:
         if summary_data:
             df_summary = pd.DataFrame(summary_data)
             
-            # Calculate blended average
             if len(summary_data) > 1:
                 blended = {
                     "Method": "Blended Average",
@@ -1400,7 +1600,6 @@ with tab_summ:
                 hide_index=True
             )
             
-            # Investment Recommendation
             st.divider()
             avg_upside = df_summary[df_summary["Method"] != "Blended Average"]["Upside to Base"].mean()
             
@@ -1411,7 +1610,7 @@ with tab_summ:
             elif avg_upside > 10:
                 recommendation = "🟢 **BUY**"
                 color = "#2e7d32"
-                rationale = "Attractive upside (10-20%) suggests good risk-reward for accumulation."
+                rationale = "Attractive upside (10–20%) suggests good risk-reward for accumulation."
             elif avg_upside > -10:
                 recommendation = "🟡 **HOLD**"
                 color = "#f57f17"
@@ -1425,24 +1624,26 @@ with tab_summ:
                 color = "#b71c1c"
                 rationale = "Significant downside (>20%) suggests the stock is overvalued. Exit positions."
             
-            st.markdown(f"""
-            <div style="background:{color};padding:25px;border-radius:12px;text-align:center;margin:20px 0;">
-                <div style="font-size:1rem;color:#fff;opacity:0.9;margin-bottom:10px;">
-                    Investment Recommendation
+            st.markdown(
+                f"""
+                <div style="background:{color};padding:25px;border-radius:12px;text-align:center;margin:20px 0;">
+                    <div style="font-size:1rem;color:#fff;opacity:0.9;margin-bottom:10px;">
+                        Investment Recommendation
+                    </div>
+                    <div style="font-size:2.5rem;font-weight:800;color:#fff;">
+                        {recommendation}
+                    </div>
+                    <div style="font-size:1.1rem;color:#fff;opacity:0.9;margin-top:10px;">
+                        Average Upside: {avg_upside:+.1f}%
+                    </div>
+                    <div style="font-size:0.9rem;color:#fff;opacity:0.85;margin-top:15px;font-style:italic;">
+                        {rationale}
+                    </div>
                 </div>
-                <div style="font-size:2.5rem;font-weight:800;color:#fff;">
-                    {recommendation}
-                </div>
-                <div style="font-size:1.1rem;color:#fff;opacity:0.9;margin-top:10px;">
-                    Average Upside: {avg_upside:+.1f}%
-                </div>
-                <div style="font-size:0.9rem;color:#fff;opacity:0.85;margin-top:15px;font-style:italic;">
-                    {rationale}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+                """,
+                unsafe_allow_html=True,
+            )
             
-            # Key Risks & Considerations
             st.divider()
             st.subheader("⚠️ Key Risks & Considerations")
             
@@ -1455,11 +1656,11 @@ with tab_summ:
                 if terminal_growth > 0.05:
                     risks.append(f"• High terminal growth ({terminal_growth:.1%}) may be optimistic")
                 
-                if data_payload['fcf_margin'] < 0.05:
-                    risks.append(f"• Low FCF margin ({data_payload['fcf_margin']:.1%}) - execution risk")
+                if data_payload["fcf_margin"] < 0.05:
+                    risks.append(f"• Low FCF margin ({data_payload['fcf_margin']:.1%}) – execution risk")
                 
-                if data_payload['debt'] / data_payload['mcap'] > 1:
-                    risks.append(f"• High leverage (D/E > 1.0) - financial risk")
+                if data_payload["debt"] / data_payload["mcap"] > 1:
+                    risks.append("• High leverage (D/E > 1.0) – financial risk")
                 
                 if len(risks) == 0:
                     risks.append("• No major valuation red flags identified")
@@ -1477,7 +1678,7 @@ with tab_summ:
                 if len(dq_tracker.assumptions) > 3:
                     data_risks.append(f"• {len(dq_tracker.assumptions)} key assumptions made")
                 
-                if 'beta_issues' in locals() and len(beta_issues) > 0:
+                if "beta_issues" in locals() and len(beta_issues) > 0:
                     data_risks.append("• Beta regression has quality concerns")
                 
                 if len(data_risks) == 0:
@@ -1497,7 +1698,8 @@ with tab_summ:
 
 # ========== FOOTER ==========
 st.divider()
-st.caption(f"""
+st.caption(
+    f"""
 **⚠️ Disclaimer:** This tool is for educational and analytical purposes only. Not investment advice. 
 Always conduct thorough due diligence and consult with financial professionals before making investment decisions.
 
@@ -1505,6 +1707,7 @@ Always conduct thorough due diligence and consult with financial professionals b
 
 **Limitations:** yfinance data can be stale, incomplete, or incorrect for Indian stocks. Use God Mode overrides for critical corrections. 
 Enterprise Value, EBITDA, and other metrics may be missing for smaller/newer companies. Always cross-verify with official filings.
-""")
+"""
+)
 
-st.caption(f"**Built by:** Streamlit + yfinance | **Version:** 2.0 Pro | **Last Updated:** {datetime.now().strftime('%Y-%m-%d')}")  
+st.caption(f"**Built by:** Streamlit + yfinance | **Version:** 2.0 Pro | **Last Updated:** {datetime.now().strftime('%Y-%m-%d')}")

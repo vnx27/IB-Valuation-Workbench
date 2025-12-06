@@ -7,3 +7,5 @@ requests
 beautifulsoup4
 statsmodels
 xlsxwriter
+numpy   
+openpyxl
