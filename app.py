@@ -130,7 +130,8 @@ def load_ticker_payload(ticker: str) -> Tuple[Optional[Dict[str, Any]], DataQual
         price = float(fast.get("last_price", 0))
         shares = int(fast.get("shares", 0))
         mcap = price * shares
-    except: pass
+    except: 
+        pass
 
     if price == 0:
         try:
@@ -138,7 +139,8 @@ def load_ticker_payload(ticker: str) -> Tuple[Optional[Dict[str, Any]], DataQual
             price = info.get("currentPrice") or info.get("regularMarketPrice") or 0.0
             if shares == 0: shares = info.get("sharesOutstanding") or 0
             if mcap == 0: mcap = info.get("marketCap") or 0
-        except: pass
+        except: 
+            pass
 
     if price == 0:
         dq.add_error("Could not fetch current price. Ticker may be delisted or data unavailable.")
@@ -176,7 +178,8 @@ def load_ticker_payload(ticker: str) -> Tuple[Optional[Dict[str, Any]], DataQual
                 try: 
                     val = float(df.loc[k].iloc[:4].sum() or 0)
                     return val
-                except: return 0.0
+                except: 
+                    return 0.0
         return 0.0
 
     revenue = get_val(inc, ["Total Revenue", "Revenue"])
@@ -351,6 +354,14 @@ def clean_peer_list(raw_text: str) -> List[str]:
     clean = raw_text.replace("[", "").replace("]", "").replace("'", "").replace('"', "").replace("\n", ",")
     return [x.strip().upper() for x in clean.split(",") if x.strip()]
 
+def _safe_get(info_dict: dict, key: str, default: float = 0.0) -> float:
+    """Safely extract a float-like value from yfinance info dict."""
+    v = info_dict.get(key, default)
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return default
+
 @st.cache_data(ttl=900, show_spinner=False)
 def get_detailed_peers(ticker_list: List[str]) -> Tuple[Optional[pd.DataFrame], List[str]]:
     """Fetch peer data with issue tracking"""
@@ -367,10 +378,10 @@ def get_detailed_peers(ticker_list: List[str]) -> Tuple[Optional[pd.DataFrame], 
             tk = yf.Ticker(clean_t)
             i = tk.info
             
-            mcap = i.get("marketCap", 0)
-            ev = i.get("enterpriseValue", 0)
-            revenue = i.get("totalRevenue", 0)
-            ebitda = i.get("ebitda", 0)
+            mcap = _safe_get(i, "marketCap")
+            ev = _safe_get(i, "enterpriseValue")
+            revenue = _safe_get(i, "totalRevenue")
+            ebitda = _safe_get(i, "ebitda")
             
             # Validate critical fields
             if mcap == 0:
@@ -382,9 +393,9 @@ def get_detailed_peers(ticker_list: List[str]) -> Tuple[Optional[pd.DataFrame], 
             
             rows.append({
                 "Ticker": clean_t.replace(".NS", ""),
-                "Price": i.get("currentPrice", 0),
+                "Price": _safe_get(i, "currentPrice"),
                 "Market Cap (Cr)": mcap / 1e7,
-                "EV (Cr)": ev / 1e7 if ev > 0 else mcap / 1e7,
+                "EV (Cr)": (ev if ev > 0 else mcap) / 1e7,
                 "Revenue (Cr)": revenue / 1e7,
                 "EBITDA (Cr)": ebitda / 1e7 if ebitda else 0,
                 "EV/Revenue": safe_div(ev if ev > 0 else mcap, revenue),
@@ -418,7 +429,7 @@ def create_sensitivity_table(base_fcf: float, base_wacc: float, base_growth: flo
         row = []
         for w in wacc_range:
             if w <= tg:
-                row.append(0)  # Invalid combination
+                row.append(0)  # placeholder for invalid combo
                 continue
             
             # Project FCF
@@ -545,7 +556,7 @@ def validate_dcf_assumptions(wacc: float, term_growth: float, fcf: float, fcf_ma
     
     # FCF issues
     if fcf <= 0:
-        issues.append(f"🚨 CRITICAL: Negative FCF (₹{fcf/1e7:.0f} Cr). DCF assumes positive future cash flows.")
+        issues.append(f"🚨 CRITICAL: Negative FCF (₹{fcf/1e7:,.0f} Cr). DCF assumes positive future cash flows.")
     
     if fcf_margin < 0:
         issues.append(f"⚠️ Negative FCF margin. High growth projections with negative FCF are aggressive.")
@@ -553,6 +564,13 @@ def validate_dcf_assumptions(wacc: float, term_growth: float, fcf: float, fcf_ma
     return issues
 
 # ================= APP UI =================
+
+# Sidebar prototype disclaimer
+st.sidebar.warning(
+    "⚠️ PROTOTYPE MODE: This tool currently uses the Yahoo Finance public API for demonstration. "
+    "Data for Indian mid-caps may be delayed or require manual overrides. "
+    "Production Roadmap: Architecture is designed to swap this module for Bloomberg/FactSet API keys."
+)
 
 st.sidebar.title("⚙️ Valuation Controls")
 ticker_input = st.sidebar.text_input("Ticker Symbol", value="RELIANCE", help="Enter NSE ticker (with or without .NS)")
@@ -676,6 +694,10 @@ with tab_wacc:
                 for issue in beta_issues:
                     st.warning(issue)
         
+        # Beta sanity check
+        if levered_beta > 2.5 or levered_beta < 0.2:
+            st.warning("⚠️ Unusual Beta. Verify ticker or liquidity.")
+        
         # Unlevered Beta
         unlevered_beta = calculate_unlevered_beta(
             levered_beta, 
@@ -765,6 +787,22 @@ with tab_wacc:
         
         st.caption("**Formula:** WACC = (E/V × Ke) + (D/V × Kd × (1-T))")
         
+        # WACC sanity check
+        if wacc < 0.06 or wacc > 0.20:
+            st.error("⚠️ High/Low WACC detected. Check Beta or Risk-Free Rate inputs.")
+        
+        # Detailed calculation logic for auditability
+        with st.expander("See Calculation Logic"):
+            st.latex(r"WACC = \frac{E}{V} \times R_e + \frac{D}{V} \times R_d \times (1 - T)")
+            st.markdown(f"""
+            **Inputs used:**
+            - Equity Weight (E/V): **{weight_e:.2%}**
+            - Cost of Equity (Re): **{ke:.2%}**
+            - Debt Weight (D/V): **{weight_d:.2%}**
+            - Cost of Debt (Rd): **{rd_pretax:.2%}**
+            - Tax Rate (T): **{tax:.2%}**
+            """)
+        
         # Beta Regression Chart
         if fig_beta:
             st.plotly_chart(fig_beta, use_container_width=True)
@@ -831,7 +869,7 @@ with tab_dcf:
         
         # Validation
         dcf_issues = validate_dcf_assumptions(wacc_dcf, terminal_growth, 
-                                               data_payload['fcf'], data_payload['fcf_margin'])
+                                              data_payload['fcf'], data_payload['fcf_margin'])
         
         if dcf_issues:
             st.divider()
@@ -910,22 +948,30 @@ with tab_dcf:
         
         st.divider()
         
-        # DCF Schedule
+        # DCF Schedule (numeric + Styler formatting)
         st.subheader("Free Cash Flow Forecast")
         
-        fcf_display = [f"{data_payload['fcf']/1e7:,.0f}"] + [f"{f/1e7:,.0f}" for f in fcf_projections] + [f"{terminal_fcf/1e7:,.0f}"]
-        pv_display = ["-"] + [f"{f*df/1e7:,.0f}" for f, df in zip(fcf_projections, discount_factors)] + [f"{pv_terminal/1e7:,.0f}"]
+        fcf_display = [data_payload['fcf']/1e7] + [f/1e7 for f in fcf_projections] + [terminal_fcf/1e7]
+        pv_display = [np.nan] + [(f*df)/1e7 for f, df in zip(fcf_projections, discount_factors)] + [pv_terminal/1e7]
         
-        fcf_data = {
+        df_fcf = pd.DataFrame({
             "Year": ["TTM"] + [f"Year {y}" for y in years] + ["Terminal"],
             "FCF (Cr)": fcf_display,
-            "Growth": ["-"] + [f"{growth_rate*100:.1f}%" for _ in years] + [f"{terminal_growth*100:.1f}%"],
-            "Discount Factor": ["-"] + [f"{df:.4f}" for df in discount_factors] + [f"{tv_discount:.4f}"],
+            "Growth": [np.nan] + [growth_rate for _ in years] + [terminal_growth],
+            "Discount Factor": [np.nan] + discount_factors + [tv_discount],
             "PV (Cr)": pv_display
-        }
+        })
         
-        df_fcf = pd.DataFrame(fcf_data)
-        st.dataframe(df_fcf, use_container_width=True, hide_index=True)
+        st.dataframe(
+            df_fcf.style.format({
+                "FCF (Cr)": "₹{:,.0f}",
+                "Growth": "{:.1%}",
+                "Discount Factor": "{:.4f}",
+                "PV (Cr)": "₹{:,.0f}"
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
         
         # Valuation Bridge Waterfall
         st.subheader("Valuation Bridge")
@@ -936,7 +982,7 @@ with tab_dcf:
         )
         st.plotly_chart(fig_waterfall, use_container_width=True)
         
-        # Excel Export
+        # Excel Export (audit-ready section)
         st.divider()
         df_schedule, df_summary = create_professional_dcf_excel(
             data_payload, years, fcf_projections, wacc_dcf, 
@@ -957,12 +1003,17 @@ with tab_dcf:
             })
             df_assumptions.to_excel(writer, sheet_name="Assumptions", index=False)
         
-        st.download_button(
-            "📥 Download DCF Model (Excel)",
-            data=buffer.getvalue(),
-            file_name=f"{clean_ticker}_DCF_{scenario.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        with st.container():
+            st.success("Model ready for export.")
+            st.caption(
+                "Generates a fully formatted .xlsx file with hard-coded values for manual sensitivity analysis."
+            )
+            st.download_button(
+                "📥 Export Audit-Ready Excel Model",
+                data=buffer.getvalue(),
+                file_name=f"{clean_ticker}_DCF_{scenario.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
 # ========== TAB 3: SENSITIVITY ANALYSIS ==========
 with tab_sens:
@@ -986,23 +1037,25 @@ with tab_sens:
             forecast_years
         )
         
-        # Style the table
+        # Replace invalid (0) combos with NaN for clearer styling
+        sens_for_display = sens_table.replace(0, np.nan)
+        
         def highlight_current(val):
-            if isinstance(val, (int, float)) and val > 0:
-                diff_pct = abs((val - current_price) / current_price)
-                if diff_pct < 0.05:
-                    return 'background-color: #1b5e20; font-weight: bold'
-                elif diff_pct < 0.15:
-                    return 'background-color: #2e7d32'
-            elif val == 0:
-                return 'background-color: #b71c1c; color: white'  # Invalid combo
+            if pd.isna(val):
+                # invalid combo (WACC <= g)
+                return 'background-color: #b71c1c; color: white'
+            diff_pct = abs((val - current_price) / current_price)
+            if diff_pct < 0.05:
+                return 'background-color: #1b5e20; font-weight: bold'
+            elif diff_pct < 0.15:
+                return 'background-color: #2e7d32'
             return ''
         
-        styled_sens = sens_table.style.format("₹{:,.0f}").applymap(highlight_current)
+        styled_sens = sens_for_display.style.format("₹{:,.0f}").applymap(highlight_current)
         st.dataframe(styled_sens, use_container_width=True)
         
         st.caption("💡 **Green cells:** Within 5-15% of current price | **Red cells:** Invalid (WACC ≤ Terminal Growth)")
-    
+
     st.divider()
     
     # Heatmap Visualization
@@ -1454,4 +1507,4 @@ Always conduct thorough due diligence and consult with financial professionals b
 Enterprise Value, EBITDA, and other metrics may be missing for smaller/newer companies. Always cross-verify with official filings.
 """)
 
-st.caption(f"**Built by:** Streamlit + yfinance | **Version:** 2.0 Pro | **Last Updated:** {datetime.now().strftime('%Y-%m-%d')}")
+st.caption(f"**Built by:** Streamlit + yfinance | **Version:** 2.0 Pro | **Last Updated:** {datetime.now().strftime('%Y-%m-%d')}")  
